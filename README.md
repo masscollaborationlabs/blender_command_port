@@ -39,6 +39,33 @@ j
 """)
 ```
 
+Alternatively, the extension now allows keeping the same connection for multiple commands:
+
+```
+import socket
+
+def send_command(soc, command):
+    soc.sendall(command.encode())
+    while True:
+        res = soc.recv(4096)
+        if not res:
+            break
+        print(res.decode())
+
+clientsocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+clientsocket.connect(('localhost', 5000))
+
+send_command(clientsocket, """
+j = 0
+for i in range(10):
+    print(j)
+    j+=i*2
+j
+""")
+
+clientsocket.close()
+```
+
 ### Visual Studio Code Integration
 The following json code can be pasted into a task.json file to add an 'Execute Script in Blender' task to VS Code.
 ```
@@ -74,6 +101,7 @@ Another way is to use execute_file_in_blender.py script to create a run configur
 
 * **Paweł Kowalski** - [pkowalski.com](http://pkowalski.com)
 * **Jeff Hanna** - [github/jeffhanna](https://github.com/jeffhanna)
+* **Oliver Mead** - [github/OliverMead](https://github.com/OliverMead)
 
 ## License
 
