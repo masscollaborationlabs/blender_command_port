@@ -116,7 +116,6 @@ class CommandPort(threading.Thread):
         print("Entering connection handler")
         while is_alive(connection):
             while not select.select([connection], [], [], self.timeout)[0]:
-                # print("Timed out")
                 if not self.do_run:
                     # ---- Break also if user requested closing the port.
                     print("do_run is False")
@@ -124,11 +123,9 @@ class CommandPort(threading.Thread):
                 if not self.blender_is_alive():
                     raise BlenderClosed
                 sleep(self.timeout / 2)
-            print("Input available")
             data = connection.recv(self.buffersize)
-            print("Input received: ", data.decode(), " as ", data)
+            # print("Input received: ", data.decode(), " as ", data)
             size = sys.getsizeof(data)
-            print("Input size: ", size)
             if size >= self.buffersize:
                 print("The length of input is probably too long: {}".format(size))
             if data != b'': # b'' indicates closed connection
