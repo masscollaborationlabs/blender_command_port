@@ -66,9 +66,6 @@ class ClientClosedConnection(Exception):
     """ Break out if client closed the connection """
     pass
 
-def is_alive(connection):
-    return not connection.fileno() == -1
-
 
 class CommandPort(threading.Thread):
     """ Command port runs on a separate thread """
@@ -114,7 +111,8 @@ class CommandPort(threading.Thread):
         Raises BlenderClosed when Blender exits 
         """
         print("Entering connection handler")
-        while is_alive(connection):
+        while True:
+            # wait for input
             while not select.select([connection], [], [], self.timeout)[0]:
                 if not self.do_run:
                     # ---- Break also if user requested closing the port.
@@ -174,7 +172,6 @@ class CommandPort(threading.Thread):
                 self.socket.listen(self.max_connections)
                 try:
                     connection, address = self.socket.accept()
-                    # connection.setblocking(0)
                     self.handle_connection(connection)
                     connection.shutdown(socket.SHUT_RDWR)
                     connection.close()
