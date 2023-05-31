@@ -41,7 +41,7 @@ j
 
 Alternatively, the extension now allows keeping the same connection for multiple commands:
 
-```
+```python
 import socket
 
 def send_command(soc, command):
