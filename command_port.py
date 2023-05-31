@@ -123,14 +123,16 @@ class CommandPort(threading.Thread):
                 if not self.blender_is_alive():
                     raise BlenderClosed
                 sleep(self.timeout / 2)
+
             data = connection.recv(self.buffersize)
             # print("Input received: ", data.decode(), " as ", data)
             size = sys.getsizeof(data)
+
             if size >= self.buffersize:
                 print("The length of input is probably too long: {}".format(size))
             if data != b'': # b'' indicates closed connection
                 command = data.decode()
-                connection.sendall(self.handle_command(command))
+                connection.sendall(self.handle_command(command).encode())
             else:
                 print("Client closed the connection")
                 raise ClientClosedConnection
@@ -152,12 +154,12 @@ class CommandPort(threading.Thread):
                             result = json.dumps(output.value)
                         else:
                             result = str(output.value)
-                        return result.encode()
+                        return result
                         break
                     elif output and output != "\n":
-                        return output.encode()
+                        return output
         else:
-            return 'OK'.encode()
+            return 'OK'
 
     def run(self):
         """
