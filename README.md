@@ -15,7 +15,7 @@ Command port can be configured and started from a Blender Command Port section o
 
 Command should be sent to command port as a text. It can be also done sent from Python:
 
-```
+```python
 import socket
 
 
@@ -41,7 +41,7 @@ j
 
 ### Visual Studio Code Integration
 The following json code can be pasted into a task.json file to add an 'Execute Script in Blender' task to VS Code.
-```
+```json 
 {
 	// See https://go.microsoft.com/fwlink/?LinkId=733558
 	// for the documentation about the tasks.json format
