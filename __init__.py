@@ -3,8 +3,8 @@ bl_info = {
     "description": "Command Port implementation for blender. "
                    "www.github.com/p4vv37/blender_command_port"
                    "www.github.com/jeffhanna/blender_command_port",
-    "author": "Pawel Kowalski, Jeff Hannna",
-    "version": (1, 2, 2),
+    "author": "Pawel Kowalski, Jeff Hannna, Oliver Mead",
+    "version": (1, 3, 0),
     "blender": (2, 93, 0),
     "location": "User preferences > Blender Command Port",
     "support": "COMMUNITY",

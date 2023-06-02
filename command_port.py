@@ -5,6 +5,9 @@ import socket
 import threading
 from queue import Queue, Empty
 
+from time import sleep
+import select
+
 import bpy
 from bpy.props import BoolProperty
 from bpy.props import FloatProperty
@@ -17,7 +20,7 @@ ResultContainer = namedtuple("ResultContainer", ["value"])
 COMMAND_PORT = None
 
 import sys
-sys.path.append(r"/home/pawel/git/tmp2")
+#sys.path.append(r"/home/pawel/git/tmp2")
 
 try:
     import pydevd_pycharm
@@ -51,6 +54,18 @@ class OutputDuplicator(AbstractContextManager):
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.stdout = self.real_stdout
 
+class ClosePort(Exception):
+    """ Break out of the nested run loop of CommandPort and clean up """
+    pass
+
+class BlenderClosed(Exception):
+    """ Break out on Blender exit """
+    pass
+
+class ClientClosedConnection(Exception):
+    """ Break out if client closed the connection """
+    pass
+
 
 class CommandPort(threading.Thread):
     """ Command port runs on a separate thread """
@@ -66,6 +81,7 @@ class CommandPort(threading.Thread):
         self.buffersize = buffersize
         self.max_connections = max_connections
         self.share_environ = share_environ
+        self.timeout = timeout
 
         self.commands_queue = Queue(queue_size)
         self.output_queue = Queue(queue_size)
@@ -74,51 +90,103 @@ class CommandPort(threading.Thread):
         self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.socket.settimeout(timeout)
         self.socket.bind(('localhost', port))
+        self.blender_main_threads = [t for t in threading.enumerate() if t.name == "MainThread"]
+
+    def blender_is_alive(self):
+        """
+         There's no method or callback that Blender calls on exit that could be used to close the port
+         So I'm detecting if a main thread of blender did finish working.
+         If it did, then I'm breaking the loop and closing the port.
+        """
+        return any([t.is_alive() for t in self.blender_main_threads])
+
+    def handle_connection(self, connection):
+        """
+        Work on a single connection:
+        Continuously read commands from the client until either the client closes the connection,
+        or the port is requested to close, or Blender exits.
+
+        Raises ClosePort when the port has been requested to close.
+        Raises ClientClosedConnection should data = b''
+        Raises BlenderClosed when Blender exits 
+        """
+        print("Entering connection handler")
+        while True:
+            # wait for input
+            while not select.select([connection], [], [], self.timeout)[0]:
+                if not self.do_run:
+                    # ---- Break also if user requested closing the port.
+                    print("do_run is False")
+                    raise ClosePort
+                if not self.blender_is_alive():
+                    raise BlenderClosed
+                sleep(self.timeout / 2)
+
+            data = connection.recv(self.buffersize)
+            # print("Input received: ", data.decode(), " as ", data)
+            size = sys.getsizeof(data)
+
+            if size >= self.buffersize:
+                print("The length of input is probably too long: {}".format(size))
+            if data != b'': # b'' indicates closed connection
+                command = data.decode()
+                connection.sendall(self.handle_command(command).encode())
+            else:
+                print("Client closed the connection")
+                raise ClientClosedConnection
+
+    def handle_command(self, command):
+        """
+        Handle a single command from the client, returning the appropriate result
+        """
+        self.commands_queue.put(command)
+        if self.redirect_output or self.return_result:
+            while True:
+                try:
+                    output = self.output_queue.get_nowait()
+                except Empty:
+                    continue
+                else:
+                    if isinstance(output, ResultContainer):
+                        if self.result_as_json:
+                            result = json.dumps(output.value)
+                        else:
+                            result = str(output.value)
+                        return result
+                        break
+                    elif output and output != "\n":
+                        return output
+        else:
+            return 'OK'
 
     def run(self):
-        # ---- Run while main thread of Blender is Alive
-        # This feels a little bit hacky, but that was the most reliable way I've found
-        # There's no method or callback that Blender calls on exit that could be used to close the port
-        # So I'm detecting if a main thread of blender did finish working.
-        # If it did, then I'm breaking the loop and closing the port.
-        threads = threading.enumerate()
-        while any([t.name == "MainThread" and t.is_alive() for t in threads]):
-            if not self.do_run:
-                # ---- Break also if user requested closing the port.
-                print("do_run is False")
-                break
-            self.socket.listen(self.max_connections)
-            try:
-                connection, address = self.socket.accept()
-                data = connection.recv(self.buffersize)
-                size = sys.getsizeof(data)
-                if size >= self.buffersize:
-                    print("The length of input is probably too long: {}".format(size))
-                if size >= 0:
-                    command = data.decode()
-                    self.commands_queue.put(command)
-                    if self.redirect_output or self.return_result:
-                        while True:
-                            try:
-                                output = self.output_queue.get_nowait()
-                            except Empty:
-                                continue
-                            else:
-                                if isinstance(output, ResultContainer):
-                                    if self.result_as_json:
-                                        result = json.dumps(output.value)
-                                    else:
-                                        result = str(output.value)
-                                    connection.sendall(result.encode())
-                                    break
-                                elif output and output != "\n":
-                                    connection.sendall(output.encode())
-                    else:
-                        connection.sendall('OK'.encode())
+        """
+        Run while main thread of Blender is Alive, and the port is not requested to close
+        """
+        try:
+            while self.blender_is_alive():
+                if not self.do_run:
+                    # ---- Break also if user requested closing the port.
+                    print("do_run is False")
+                    raise ClosePort
+                self.socket.listen(self.max_connections)
+                try:
+                    connection, address = self.socket.accept()
+                    self.handle_connection(connection)
                     connection.shutdown(socket.SHUT_RDWR)
                     connection.close()
-            except socket.timeout:
-                pass
+                except socket.timeout:
+                    pass
+                except ClientClosedConnection:
+                    connection.shutdown(socket.SHUT_RDWR)
+                    connection.close()
+                    continue
+                except (ClosePort, BlenderClosed):
+                    connection.shutdown(socket.SHUT_RDWR)
+                    connection.close()
+                    break
+        except ClosePort:
+            pass
         self.socket.close()
         print("Closing the socket")
         return
